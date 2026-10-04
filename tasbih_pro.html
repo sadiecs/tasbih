@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tasbih Pro - Verified Version</title>
+    <style>
+        :root {
+            --primary: #004d40;
+            --secondary: #26a69a;
+            --gold: #ffd700;
+            --bg: #f4f7f6;
+        }
+
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background-color: var(--bg);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            margin: 0;
+            user-select: none;
+            touch-action: manipulation;
+        }
+
+        .container {
+            background: white;
+            padding: 25px;
+            border-radius: 30px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            text-align: center;
+            width: 100%;
+            max-width: 400px;
+            box-sizing: border-box;
+        }
+
+        .settings-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        select, input {
+            padding: 10px;
+            border: 2px solid #eee;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .arabic-display {
+            font-size: 1.25rem; /* Increased size */
+            color: var(--primary);
+            direction: rtl;
+            min-height: 2.5em;
+            margin: 15px 0;
+            line-height: 1.6;
+            font-weight: 600;
+        }
+
+        #displayName {
+            margin: 0; 
+            color: #444; 
+            font-size: 0.70rem; /* Increased size */
+            font-weight: bold;
+        }
+
+        .progress-container {
+            position: relative;
+            width: 220px;
+            height: 220px;
+            margin: 10px auto 20px;
+        }
+
+        svg { transform: rotate(-90deg); }
+
+        .counter-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .counter-display {
+            font-size: 4.5rem;
+            font-weight: 800;
+            color: var(--primary);
+        }
+
+        .btn-tap {
+            background: var(--primary);
+            color: white;
+            width: 100%;
+            padding: 30px;
+            border: none;
+            border-radius: 20px;
+            font-size: 1.8rem;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 8px 20px rgba(0,77,64,0.3);
+            margin-bottom: 20px;
+        }
+
+        .btn-tap:active { transform: scale(0.95); background: #00332c; }
+
+        .action-bar {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .btn-small {
+            padding: 10px 5px;
+            font-size: 0.8rem;
+            border-radius: 10px;
+            border: 1px solid #ddd;
+            background: #fff;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .history-section {
+            width: 100%;
+            max-width: 400px;
+            margin-top: 15px;
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            box-sizing: border-box;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+        }
+
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="settings-grid">
+        <select id="presetSelect" onchange="updateUI()"></select>
+        <input type="number" id="goalInput" value="33" oninput="updateProgress()" title="Target Goal">
+    </div>
+
+    <div id="arabicText" class="arabic-display"></div>
+    <h3 id="displayName">Loading...</h3>
+
+    <div class="progress-container">
+        <svg width="220" height="220">
+            <circle stroke="#eee" stroke-width="12" fill="transparent" r="90" cx="110" cy="110"/>
+            <circle id="progressRing" stroke="var(--primary)" stroke-width="12" stroke-linecap="round" fill="transparent" r="90" cx="110" cy="110" 
+                    stroke-dasharray="565.48" stroke-dashoffset="565.48" style="transition: stroke-dashoffset 0.3s;"/>
+        </svg>
+        <div class="counter-overlay">
+            <div class="counter-display" id="mainCount">0</div>
+        </div>
+    </div>
+
+    <button class="btn-tap" onclick="increment()">TAP</button>
+    
+    <div class="action-bar">
+        <button class="btn-small" onclick="addNew()">+ Add</button>
+        <button class="btn-small" onclick="editExisting()">✎ Edit</button>
+        <button class="btn-small" onclick="removeSelected()">- Del</button>
+        <button class="btn-small" onclick="toggleMute()" id="muteBtn">🔊 Sound</button>
+        <button class="btn-small" onclick="resetAndSave()" style="color:red; grid-column: span 2;">Reset & Save History</button>
+    </div>
+
+    <div style="display:flex; gap:10px;">
+        <button class="btn-small" style="flex:1" onclick="downloadBackup()">Backup</button>
+        <button class="btn-small" style="flex:1" onclick="document.getElementById('importFile').click()">Restore</button>
+        <input type="file" id="importFile" style="display:none" accept=".json" onchange="restoreBackup(event)">
+    </div>
+</div>
+
+<div class="history-section">
+    <h4 style="margin:0 0 10px 0">History Log</h4>
+    <div id="historyLog"></div>
+</div>
+
+<script>
+    // 1. DATA INITIALIZATION
+    let isMuted = false;
+    let count = parseInt(localStorage.getItem('count')) || 0;
+    let history = JSON.parse(localStorage.getItem('historyLog')) || [];
+    let presets = JSON.parse(localStorage.getItem('myPresets')) || [
+        { name: "Durood Shareef", arabic: "اَللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا وَمَوْلَانَا مُحَمَّدٍ مَّعْدِنِ الْجُوْدِ وَالْكَرَمِ وَاٰلِهٖ وَبَارِكْ وَسَلِّمْ" },
+        { name: "SubhanAllah", arabic: "سُبْحَانَ اللهِ" }
+    ];
+
+    // Audio Setup
+    let audioCtx;
+
+    function initAudio() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }
+
+    function playSound() {
+        if (isMuted || !audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+    }
+
+    // 2. CORE LOGIC
+    function increment() {
+        initAudio();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        
+        count++;
+        document.getElementById('mainCount').innerText = count;
+        playSound();
+        updateProgress();
+        localStorage.setItem('count', count);
+        
+        const goal = parseInt(document.getElementById('goalInput').value);
+        if (count === goal) {
+            if ("vibrate" in navigator) navigator.vibrate([200, 100, 200]);
+            setTimeout(() => alert("MashaAllah! Goal Reached."), 50);
+        }
+    }
+
+    function updateProgress() {
+        const ring = document.getElementById('progressRing');
+        const goal = parseInt(document.getElementById('goalInput').value) || 1;
+        const circum = 2 * Math.PI * 90;
+        const offset = circum - (Math.min(count, goal) / goal) * circum;
+        ring.style.strokeDashoffset = offset;
+        ring.setAttribute('stroke', count >= goal ? '#ffd700' : '#004d40');
+    }
+
+    function resetAndSave() {
+        if (count === 0) return;
+        if (!confirm("Save this count to history and reset?")) return;
+
+        const selIdx = document.getElementById('presetSelect').value;
+        const label = presets[selIdx]?.name || "Counter";
+        history.unshift({ label, total: count, date: new Date().toLocaleDateString() });
+        
+        count = 0;
+        document.getElementById('mainCount').innerText = count;
+        saveData();
+        renderHistory();
+        updateProgress();
+    }
+
+    function updateUI() {
+        const idx = document.getElementById('presetSelect').value;
+        if(idx !== "-1" && presets[idx]) {
+            document.getElementById('displayName').innerText = presets[idx].name;
+            document.getElementById('arabicText').innerText = presets[idx].arabic;
+        } else {
+            document.getElementById('displayName').innerText = "No Preset";
+            document.getElementById('arabicText').innerText = "";
+        }
+    }
+
+    function populate() {
+        const sel = document.getElementById('presetSelect');
+        sel.innerHTML = presets.map((p, i) => `<option value="${i}">${p.name}</option>`).join('');
+        if(presets.length === 0) sel.innerHTML = '<option value="-1">-- Empty --</option>';
+        updateUI();
+    }
+
+    // 3. MANAGEMENT
+    function addNew() {
+        const n = prompt("Enter Label Name (e.g. Alhamdulillah):");
+        if(!n) return;
+        const a = prompt("Paste Arabic Text (Optional):");
+        presets.push({name: n, arabic: a || ""});
+        saveData();
+        populate();
+        document.getElementById('presetSelect').value = presets.length - 1;
+        updateUI();
+    }
+
+    function editExisting() {
+        const idx = document.getElementById('presetSelect').value;
+        if (idx === "-1") return;
+        
+        const current = presets[idx];
+        const newName = prompt("Edit Name:", current.name);
+        if (newName === null) return;
+        const newArabic = prompt("Edit Arabic:", current.arabic);
+        if (newArabic === null) return;
+
+        presets[idx] = { name: newName, arabic: newArabic };
+        saveData();
+        populate();
+        document.getElementById('presetSelect').value = idx;
+        updateUI();
+    }
+
+    function removeSelected() {
+        const idx = document.getElementById('presetSelect').value;
+        if(idx === "-1") return;
+        if(confirm("Delete this entire preset?")) {
+            presets.splice(idx, 1);
+            saveData();
+            populate();
+        }
+    }
+
+    function saveData() {
+        localStorage.setItem('myPresets', JSON.stringify(presets));
+        localStorage.setItem('historyLog', JSON.stringify(history));
+    }
+
+    function renderHistory() {
+        document.getElementById('historyLog').innerHTML = history.slice(0, 10).map(h => 
+            `<div class="history-item">
+                <span>${h.label} <small style="color:#888;">(${h.date})</small></span>
+                <strong>${h.total}</strong>
+            </div>`
+        ).join('') || "<p style='color:#999;'>No history yet.</p>";
+    }
+
+    function toggleMute() {
+        isMuted = !isMuted;
+        document.getElementById('muteBtn').innerText = isMuted ? "🔇 Muted" : "🔊 Sound";
+    }
+
+    // Backup & Restore
+    function downloadBackup() {
+        const data = { presets, history, count };
+        const blob = new Blob([JSON.stringify(data)], {type: 'application/json'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'tasbih_pro_data.json';
+        a.click();
+    }
+
+    function restoreBackup(e) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const data = JSON.parse(event.target.result);
+                presets = data.presets || [];
+                history = data.history || [];
+                count = data.count || 0;
+                saveData();
+                location.reload();
+            } catch(e) { alert("Invalid file."); }
+        };
+        reader.readAsText(e.target.files[0]);
+    }
+
+    window.onload = () => {
+        populate();
+        renderHistory();
+        updateProgress();
+        document.getElementById('mainCount').innerText = count;
+    };
+</script>
+</body>
+</html>
